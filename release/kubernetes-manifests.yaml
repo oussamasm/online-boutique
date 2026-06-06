@@ -1008,7 +1008,7 @@ spec:
   dnsNames:
   - "online-boutique-test.com"  # Replace with your domain
   - "www.online-boutique-test.com"  # Replace with your domain
-  
+---
 # NGINX Ingress to expose frontend with TLS
 apiVersion: networking.k8s.io/v1
 kind: Ingress
@@ -1023,6 +1023,7 @@ spec:
   tls:
   - hosts:
     - "online-boutique-test.com"  # Replace with your domain
+    - "www.online-boutique-test.com"  # Replace with your domain
     secretName: frontend-tls
   rules:
   - host: "online-boutique-test.com"  # Replace with your domain
