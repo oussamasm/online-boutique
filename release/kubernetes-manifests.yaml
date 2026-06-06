@@ -977,37 +977,37 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: adservice
----
-# cert-manager ClusterIssuer for Let's Encrypt
-apiVersion: cert-manager.io/v1
-kind: ClusterIssuer
-metadata:
-  name: letsencrypt-prod
-spec:
-  acme:
-    server: https://acme-v02.api.letsencrypt.org/directory
-    email: smirioussama@gmail.com  # Replace with your email
-    privateKeySecretRef:
-      name: letsencrypt-prod
-    solvers:
-    - http01:
-        ingress:
-          class: nginx
----
-# cert-manager Certificate for TLS
-apiVersion: cert-manager.io/v1
-kind: Certificate
-metadata:
-  name: frontend-cert
-  namespace: default
-spec:
-  secretName: frontend-tls
-  issuerRef:
-    name: letsencrypt-prod
-    kind: ClusterIssuer
-  dnsNames:
-  - "192.168.1.139.nip.io"
-  - "www.192.168.1.139.nip.io"
+# ---
+# # cert-manager ClusterIssuer for Let's Encrypt
+# apiVersion: cert-manager.io/v1
+# kind: ClusterIssuer
+# metadata:
+#   name: letsencrypt-prod
+# spec:
+#   acme:
+#     server: https://acme-v02.api.letsencrypt.org/directory
+#     email: smirioussama@gmail.com  # Replace with your email
+#     privateKeySecretRef:
+#       name: letsencrypt-prod
+#     solvers:
+#     - http01:
+#         ingress:
+#           class: nginx
+# ---
+# # cert-manager Certificate for TLS
+# apiVersion: cert-manager.io/v1
+# kind: Certificate
+# metadata:
+#   name: frontend-cert
+#   namespace: default
+# spec:
+#   secretName: frontend-tls
+#   issuerRef:
+#     name: letsencrypt-prod
+#     kind: ClusterIssuer
+#   dnsNames:
+#   - "192.168.1.139.nip.io"
+#   - "www.192.168.1.139.nip.io"
 ---
 # NGINX Ingress to expose frontend with TLS
 apiVersion: networking.k8s.io/v1
@@ -1015,19 +1015,19 @@ kind: Ingress
 metadata:
   name: frontend-ingress
   annotations:
-    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    # cert-manager.io/cluster-issuer: "letsencrypt-prod"
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
     nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
     nginx.ingress.kubernetes.io/affinity: "cookie"
-    cert-manager.io/http01-ingress-class: nginx
-    #nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
+    # cert-manager.io/http01-ingress-class: nginx
+    # #nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
     nginx.ingress.kubernetes.io/proxy-ssl-verify: "off"
 spec:
   ingressClassName: nginx
   tls:
   - hosts:
     - "192.168.1.139.nip.io"
-    - "www.192.168.1.139.nip.io"  # Replace with your domain
+    - "www.192.168.1.139.nip.io"
     secretName: frontend-tls
   rules:
   - host: "192.168.1.139.nip.io"
@@ -1040,7 +1040,7 @@ spec:
             name: frontend
             port:
               number: 80
-  - host: "www.192.168.1.139.nip.io"  # Replace with your domain
+  - host: "www.192.168.1.139.nip.io"
     http:
       paths:
       - path: /
