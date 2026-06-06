@@ -1006,8 +1006,8 @@ spec:
     name: letsencrypt-prod
     kind: ClusterIssuer
   dnsNames:
-  - "203.0.113.42.nip.io"
-  - "www.203.0.113.42.nip.io"
+  - "192.168.1.139.nip.io"
+  - "www.192.168.1.139.nip.io"
 ---
 # NGINX Ingress to expose frontend with TLS
 apiVersion: networking.k8s.io/v1
@@ -1026,11 +1026,11 @@ spec:
   ingressClassName: nginx
   tls:
   - hosts:
-    - "203.0.113.42.nip.io"
-    - "www.203.0.113.42.nip.io"  # Replace with your domain
+    - "192.168.1.139.nip.io"
+    - "www.192.168.1.139.nip.io"  # Replace with your domain
     secretName: frontend-tls
   rules:
-  - host: "203.0.113.42.nip.io"
+  - host: "192.168.1.139.nip.io"
     http:
       paths:
       - path: /
@@ -1040,7 +1040,7 @@ spec:
             name: frontend
             port:
               number: 80
-  - host: "www.203.0.113.42.nip.io"  # Replace with your domain
+  - host: "www.192.168.1.139.nip.io"  # Replace with your domain
     http:
       paths:
       - path: /
