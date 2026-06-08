@@ -1026,11 +1026,11 @@ spec:
   ingressClassName: nginx
   tls:
   - hosts:
-    - "192.168.1.139.nip.io"
-    - "www.192.168.1.139.nip.io"
+    - "10.0.2.15.nip.io"
+    - "www.10.0.2.15.nip.io"
     secretName: frontend-tls
   rules:
-  - host: "192.168.1.139.nip.io"
+  - host: "10.0.2.15.nip.io"
     http:
       paths:
       - path: /
@@ -1040,7 +1040,7 @@ spec:
             name: frontend
             port:
               number: 80
-  - host: "www.192.168.1.139.nip.io"
+  - host: "www.10.0.2.15.nip.io"
     http:
       paths:
       - path: /
