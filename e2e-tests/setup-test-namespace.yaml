@@ -1,0 +1,166 @@
+---
+# Namespace for E2E tests
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: test-auto
+  labels:
+    name: test-auto
+---
+# ServiceAccount for E2E tests
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: e2e-tests
+  namespace: test-auto
+---
+# ClusterRole for E2E tests (read-only access)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: e2e-tests
+rules:
+# Core API resources
+- apiGroups: [""]
+  resources:
+  - nodes
+  - nodes/stats
+  - nodes/metrics
+  - persistentvolumes
+  - events
+  verbs:
+  - get
+  - list
+  - watch
+  
+# Namespace-scoped resources
+- apiGroups: [""]
+  resources:
+  - pods
+  - pods/log
+  - pods/status
+  - services
+  - endpoints
+  - persistentvolumeclaims
+  - configmaps
+  - secrets
+  verbs:
+  - get
+  - list
+  - watch
+  
+# Apps API
+- apiGroups: ["apps"]
+  resources:
+  - deployments
+  - deployments/status
+  - statefulsets
+  - statefulsets/status
+  - daemonsets
+  - daemonsets/status
+  - replicasets
+  - replicasets/status
+  verbs:
+  - get
+  - list
+  - watch
+  
+# Networking API
+- apiGroups: ["networking.k8s.io"]
+  resources:
+  - ingresses
+  - ingresses/status
+  - networkpolicies
+  verbs:
+  - get
+  - list
+  - watch
+  
+# Batch API
+- apiGroups: ["batch"]
+  resources:
+  - jobs
+  - jobs/status
+  - cronjobs
+  - cronjobs/status
+  verbs:
+  - get
+  - list
+  - watch
+---
+# ClusterRoleBinding for E2E tests
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: e2e-tests
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: e2e-tests
+subjects:
+- kind: ServiceAccount
+  name: e2e-tests
+  namespace: test-auto
+---
+# Role for namespace-specific permissions
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: e2e-tests-namespace
+  namespace: test-auto
+rules:
+- apiGroups: [""]
+  resources:
+  - pods
+  - pods/log
+  - pods/status
+  - services
+  - endpoints
+  - persistentvolumeclaims
+  - configmaps
+  - secrets
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - delete
+  
+- apiGroups: ["apps"]
+  resources:
+  - deployments
+  - deployments/status
+  - statefulsets
+  - statefulsets/status
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - delete
+  
+- apiGroups: ["networking.k8s.io"]
+  resources:
+  - ingresses
+  - ingresses/status
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - delete
+---
+# RoleBinding for namespace-specific permissions
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: e2e-tests-namespace
+  namespace: test-auto
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: e2e-tests-namespace
+subjects:
+- kind: ServiceAccount
+  name: e2e-tests
+  namespace: test-auto

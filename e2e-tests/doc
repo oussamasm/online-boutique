@@ -1,0 +1,526 @@
+Oui, **vous pouvez lancer un simple test Go**.  
+Vous n’êtes **pas obligé** de créer un binaire dédié si votre objectif est juste d’exécuter vos E2E dans un `CronJob` ou un `Job`.
+
+Le plus simple est de faire tourner un conteneur qui exécute :
+
+```bash
+go test -v ./tests/e2e
+```
+
+## En revanche, il y a 2 cas
+
+### 1. **Simple et rapide pour un POC**
+Vous utilisez une image `golang`, vous montez ou embarquez votre code, puis vous faites :
+
+```bash
+go test -v ./tests/e2e
+```
+
+C’est pratique pour démarrer.
+
+### 2. **Plus propre pour du long terme**
+Vous construisez une image avec votre code de test et vous exécutez `go test` dedans.
+
+C’est généralement la meilleure solution si vous passez par ArgoCD/GitOps.
+
+---
+
+# Option recommandée : exécuter `go test` dans un CronJob
+
+Je vous donne un exemple concret.
+
+---
+
+# 1. Structure de repo
+
+Exemple :
+
+```text
+repo/
+├── apps/
+│   └── test-auto/
+│       ├── namespace.yaml
+│       ├── deployment-nginx.yaml
+│       ├── serviceaccount-rbac.yaml
+│       ├── cronjob-go-test.yaml
+│       └── kustomization.yaml
+├── tests/
+│   └── e2e/
+│       └── cluster_pod_test.go
+├── go.mod
+├── go.sum
+└── Dockerfile.gotest
+```
+
+---
+
+# 2. Votre test Go
+
+Vous pouvez garder un test standard basé sur :
+
+```go
+func TestKubernetesE2E(t *testing.T)
+```
+
+Donc oui, votre fichier `cluster_pod_test.go` reste valable.
+
+---
+
+# 3. Dockerfile pour exécuter `go test`
+
+Le plus simple est de construire une image qui contient :
+
+- votre code
+- les dépendances Go
+- et dont la commande lance `go test`
+
+## `Dockerfile.gotest`
+
+```dockerfile
+FROM golang:1.22
+
+WORKDIR /workspace
+
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY tests ./tests
+
+CMD ["go", "test", "-v", "./tests/e2e"]
+```
+
+---
+
+## Si votre code importe aussi d’autres packages locaux
+Alors copiez plutôt tout le repo :
+
+```dockerfile
+FROM golang:1.22
+
+WORKDIR /workspace
+
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+
+CMD ["go", "test", "-v", "./tests/e2e"]
+```
+
+C’est souvent le plus simple.
+
+---
+
+# 4. Construire l’image
+
+Exemple :
+
+```bash
+docker build -f Dockerfile.gotest -t ghcr.io/mon-org/k8s-e2e-gotest:latest .
+docker push ghcr.io/mon-org/k8s-e2e-gotest:latest
+```
+
+---
+
+# 5. RBAC pour exécuter les tests
+
+Comme votre test fait :
+
+- lecture des nodes
+- lecture des pods
+- lecture des deployments
+- `exec` dans un pod
+
+il faut les permissions associées.
+
+## `apps/test-auto/serviceaccount-rbac.yaml`
+
+```yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: e2e-go-test
+  namespace: test-auto
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: e2e-go-test
+  namespace: test-auto
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["pods/exec"]
+    verbs: ["create"]
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: e2e-go-test
+  namespace: test-auto
+subjects:
+  - kind: ServiceAccount
+    name: e2e-go-test
+    namespace: test-auto
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: e2e-go-test
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: e2e-go-test-nodes
+rules:
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: e2e-go-test-nodes
+subjects:
+  - kind: ServiceAccount
+    name: e2e-go-test
+    namespace: test-auto
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: e2e-go-test-nodes
+```
+
+---
+
+# 6. Exemple CronJob qui exécute `go test`
+
+## `apps/test-auto/cronjob-go-test.yaml`
+
+```yaml
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: e2e-go-test
+  namespace: test-auto
+spec:
+  schedule: "*/30 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      template:
+        spec:
+          serviceAccountName: e2e-go-test
+          restartPolicy: Never
+          containers:
+            - name: go-test
+              image: ghcr.io/mon-org/k8s-e2e-gotest:latest
+              imagePullPolicy: Always
+              command: ["go", "test", "-v", "./tests/e2e"]
+              env:
+                - name: E2E_NAMESPACE
+                  value: test-auto
+                - name: E2E_LABEL_SELECTOR
+                  value: app=nginx
+                - name: E2E_DEPLOYMENT_NAME
+                  value: nginx
+```
+
+> Remplacez l’image par votre image réelle.
+
+---
+
+# 7. Déploiement nginx de test
+
+## `apps/test-auto/deployment-nginx.yaml`
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx
+  namespace: test-auto
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nginx
+  template:
+    metadata:
+      labels:
+        app: nginx
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:1.25
+          ports:
+            - containerPort: 80
+          command:
+            - /bin/sh
+            - -c
+            - |
+              touch /tmp/healthy
+              nginx -g 'daemon off;'
+          readinessProbe:
+            exec:
+              command: ["cat", "/tmp/healthy"]
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            exec:
+              command: ["cat", "/tmp/healthy"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 2
+```
+
+---
+
+# 8. Namespace
+
+## `apps/test-auto/namespace.yaml`
+
+```yaml
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: test-auto
+```
+
+---
+
+# 9. Kustomization
+
+## `apps/test-auto/kustomization.yaml`
+
+```yaml
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - namespace.yaml
+  - deployment-nginx.yaml
+  - serviceaccount-rbac.yaml
+  - cronjob-go-test.yaml
+```
+
+---
+
+# 10. Comment ça marche dans le pod
+
+Votre pod CronJob démarre avec l’image Go contenant vos tests.
+
+Dans le conteneur, la commande suivante s’exécute :
+
+```bash
+go test -v ./tests/e2e
+```
+
+Comme votre code contient :
+
+```go
+return rest.InClusterConfig()
+```
+
+si `KUBECONFIG` n’est pas défini, alors le test utilisera automatiquement :
+
+- le `ServiceAccount`
+- le token monté dans le pod
+- l’accès à l’API Kubernetes in-cluster
+
+Donc oui, cela fonctionne bien dans un Job/CronJob.
+
+---
+
+# 11. Déclenchement manuel
+
+Pour tester immédiatement sans attendre le cron :
+
+```bash
+kubectl -n test-auto create job --from=cronjob/e2e-go-test e2e-go-test-manual
+```
+
+Puis :
+
+```bash
+kubectl -n test-auto logs -f job/e2e-go-test-manual
+```
+
+---
+
+# 12. Sortie attendue
+
+Comme vous utilisez `go test -v`, vous aurez une sortie de ce style :
+
+```text
+=== RUN   TestKubernetesE2E
+=== RUN   TestKubernetesE2E/API_Kubernetes_accessible
+=== RUN   TestKubernetesE2E/Node_Ready
+=== RUN   TestKubernetesE2E/Deployment_available
+=== RUN   TestKubernetesE2E/Pod_exists
+=== RUN   TestKubernetesE2E/Pod_running
+=== RUN   TestKubernetesE2E/Pod_has_readiness_and_liveness_probes
+=== RUN   TestKubernetesE2E/Readiness_probe_passes
+=== RUN   TestKubernetesE2E/Liveness_failure_triggers_restart
+--- PASS: TestKubernetesE2E (18.42s)
+    --- PASS: TestKubernetesE2E/API_Kubernetes_accessible (0.01s)
+    --- PASS: TestKubernetesE2E/Node_Ready (0.02s)
+    --- PASS: TestKubernetesE2E/Deployment_available (5.00s)
+    --- PASS: TestKubernetesE2E/Pod_exists (0.01s)
+    --- PASS: TestKubernetesE2E/Pod_running (0.01s)
+    --- PASS: TestKubernetesE2E/Pod_has_readiness_and_liveness_probes (0.01s)
+    --- PASS: TestKubernetesE2E/Readiness_probe_passes (0.01s)
+    --- PASS: TestKubernetesE2E/Liveness_failure_triggers_restart (13.35s)
+PASS
+ok  	github.com/mon-org/mon-repo/tests/e2e	18.420s
+```
+
+---
+
+# 13. Est-ce une bonne pratique ?
+
+## Oui, pour :
+- un POC,
+- un besoin simple,
+- une validation périodique,
+- un environnement de test dédié.
+
+## Un peu moins bien si :
+- vous voulez une image très légère,
+- vous voulez des temps de démarrage optimisés,
+- vous voulez des résultats très industrialisés.
+
+Dans ce cas, le binaire compilé est plus propre.
+
+Mais si votre question est :
+
+> “Est-ce que je peux runner un simple test go ?”
+
+La réponse est clairement :
+
+**Oui, tout à fait.**
+
+---
+
+# 14. Différence entre `go test` et binaire compilé
+
+## `go test`
+### Avantages
+- très simple
+- naturel pour des tests Go
+- logs de test standards
+- pas besoin de réécrire le code en programme principal
+
+### Inconvénients
+- image plus lourde
+- exécution un peu moins optimisée
+- moins pratique pour exporter des statuts personnalisés
+
+## Binaire compilé
+### Avantages
+- image plus légère
+- démarrage plus rapide
+- plus propre pour production
+
+### Inconvénients
+- nécessite de transformer le test en programme exécutable ou d’avoir une couche supplémentaire
+
+---
+
+# 15. Recommandation pour vous
+
+Vu votre besoin, je vous recommande :
+
+## Étape 1
+Commencez avec un **simple `go test` dans un CronJob**
+
+Parce que :
+- c’est rapide à mettre en place,
+- ça valide toute la chaîne,
+- c’est suffisant pour l’exercice.
+
+## Étape 2
+Si besoin plus tard, migrez vers :
+- un binaire dédié
+- ou une exécution en GitHub Actions + CronJob de supervision
+
+---
+
+# 16. Point d’attention très important
+
+Dans votre test actuel, vous faites un `exec` dans le pod nginx :
+
+```go
+rm -f /tmp/healthy
+```
+
+Cela suppose que :
+
+- le conteneur `nginx` possède `/bin/sh`
+- vous avez le droit RBAC `pods/exec`
+- `remotecommand` fonctionne correctement dans votre cluster
+
+Sur `nginx:1.25`, c’est généralement bon.
+
+---
+
+# 17. Si vous voulez le plus simple possible
+
+Vous pouvez même utiliser un **Job** au lieu d’un `CronJob` pour commencer.
+
+Exemple :
+
+```yaml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: e2e-go-test-manual
+  namespace: test-auto
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      serviceAccountName: e2e-go-test
+      restartPolicy: Never
+      containers:
+        - name: go-test
+          image: ghcr.io/mon-org/k8s-e2e-gotest:latest
+          command: ["go", "test", "-v", "./tests/e2e"]
+          env:
+            - name: E2E_NAMESPACE
+              value: test-auto
+            - name: E2E_LABEL_SELECTOR
+              value: app=nginx
+            - name: E2E_DEPLOYMENT_NAME
+              value: nginx
+```
+
+C’est souvent la meilleure première étape avant d’automatiser avec un CronJob.
+
+---
+
+# 18. Résumé
+
+## Oui, vous pouvez exécuter un simple test Go dans Kubernetes.
+Le modèle est :
+
+- image Docker contenant votre code
+- commande `go test -v ./tests/e2e`
+- `ServiceAccount` + RBAC
+- `Job` ou `CronJob`
+
+---
+
+Si vous voulez, je peux maintenant vous donner **la version la plus minimale**, c’est-à-dire uniquement :
+
+1. **un `Job` YAML**,  
+2. **un `Dockerfile.gotest`**,  
+3. **un test Go minimal**,  
+
+pour que vous puissiez faire un essai très rapidement.
