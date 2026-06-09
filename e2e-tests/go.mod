@@ -1,6 +1,6 @@
 module github.com/online-boutique/e2e-tests
 
-go 1.21
+go 1.16
 
 require (
 	k8s.io/api v0.28.0
@@ -25,7 +25,6 @@ require (
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
-	github.com/modern-go/concurrent v0.0.0-20230330173713-942fedbb3226 // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-11d3f7d4d0c1 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
